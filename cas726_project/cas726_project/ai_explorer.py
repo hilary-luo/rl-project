@@ -63,8 +63,6 @@ class NavEnv(gym.Env, Node):
         self.costmap = np.full((AI_MAP_DIM, AI_MAP_DIM), -1, dtype=np.int8)
         self.visited_pixels = np.zeros((AI_MAP_DIM, AI_MAP_DIM), dtype=np.int8)
         self.robot_pose = PoseStamped()
-        self.robot_pose_prev = PoseStamped()
-        self.goal_pose = PoseStamped()
         self.map_reset_status = True
         self.pose_reset_status = True
         self.costmap_reset_status = True
@@ -72,32 +70,32 @@ class NavEnv(gym.Env, Node):
 
     def step(self, action):
         # Save pose before moving
-        self.robot_pose_prev = self.robot_pose
+        robot_pose_prev = self.robot_pose
 
-        # Set the next goal pose for Nav2
-
+        # Flag to represent whether the robot can reach the goal given by the model
         invalid_goal = False
 
-        # Translate from action space into map frame
-        self.goal_pose = self.action_space_to_map_frame(self, action)
+        # Set the next goal pose for Nav2
+        goal_pose = self.action_space_to_map_frame(self, action)
         map_2d_array = self.map_msg_to_obs_space(self.map)
+
+        # Determine if the robot should move to the goal
 
         # TODO: Do I need to check for a particular radius of not unknown
         if (map_2d_array[action[0].item().pose.position.x*ACTION_RESOLUTION_FACTOR][action[1].item().pose.position.y*ACTION_RESOLUTION_FACTOR] == -1):
-            print(f'Pose {self.goal_pose.pose.position.x}, {self.goal_pose.pose.position.y} is unknown space, skipping navigation')
+            print(f'Pose {goal_pose.pose.position.x}, {goal_pose.pose.position.y} is unknown space, skipping navigation')
             invalid_goal = True
 
         # TODO: what should the threshold be for the costmap to avoid the blue area
         elif (self.costmap[action[0].item().pose.position.x*ACTION_RESOLUTION_FACTOR][action[1].item().pose.position.y*ACTION_RESOLUTION_FACTOR] >= 70):
-            print(f'Pose {self.goal_pose.pose.position.x}, {self.goal_pose.pose.position.y} is occupied space, skipping navigation')
+            print(f'Pose {goal_pose.pose.position.x}, {goal_pose.pose.position.y} is near occupied space, skipping navigation')
             invalid_goal = True
 
         else:
-
             # Send the goal pose to the navigation stack
             print('Sending the pose')
             nav2_goal_msg = NavigateToPose.Goal()
-            nav2_goal_msg.pose = self.goal_pose
+            nav2_goal_msg.pose = goal_pose
             nav2_future = self.nav2_client.send_goal_async(nav2_goal_msg, self.nav_callback)
 
             # Wait for the navigation to complete before taking the next step
@@ -115,6 +113,8 @@ class NavEnv(gym.Env, Node):
             rclpy.spin_until_future_complete(self,result_future)
             print('Navigation Completed')
 
+        # Calculate reward
+
         if invalid_goal:
             reward = -1
         else:
@@ -122,9 +122,10 @@ class NavEnv(gym.Env, Node):
             old_pixels = self.visited_pixels.copy() #TODO: Update visited pixels on the first map / should sit for a couple of seconds and then set this and then start -> maybe handle this in main
             self.visited_pixels[map_2d_array >= 0] = 1
             new_pixels = self.visited_pixels - old_pixels
-            robot_pose_in_action = self.map_frame_to_action_space(self, self.robot_pose)
-            reward = np.sum(new_pixels) - 0.1*np.linalg.norm(np.array(robot_pose_in_action[0], robot_pose_in_action[1]) - np.array([self.goal_pose.pose.position.x, self.goal_pose.pose.position.y]))
+            robot_pose_in_action = self.map_frame_to_action_space(self, robot_pose_prev)
+            reward = np.sum(new_pixels) - 0.1*np.linalg.norm(np.array([robot_pose_in_action[0], robot_pose_in_action[1]]) - np.array([action[0].item(), action[1].item()]))
             # TODO: Add bounds?
+            
         print(f'Reward: {reward}')
 
         # Check if the goal is reached
@@ -176,7 +177,7 @@ class NavEnv(gym.Env, Node):
         x = int((pose_in.pose.position.x - self.map.info.origin.pose.position.x)/(self.map.info.resolution*MAP_MAX_POOLING*ACTION_RESOLUTION_FACTOR))
         y = int((pose_in.pose.position.y - self.map.info.origin.pose.position.y)/(self.map.info.resolution*MAP_MAX_POOLING*ACTION_RESOLUTION_FACTOR))
         # z = (pose_in.pose.orientation.z - self.map.info.origin.pose.orientation.z)
-        return np.array(x, y, dtype=np.uint8)
+        return np.array([x, y], dtype=np.uint8)
     
     def action_space_to_map_frame(self, action):
         pose_out = PoseStamped()
