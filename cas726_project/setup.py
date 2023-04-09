@@ -21,7 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'ai_explorer = cas726_project.ai_explorer:main',
-            'frontier_explorer = cas726_project.frontier_explorer:main'
+            'frontier_explorer = cas726_project.frontier_explorer:main',
             'evaluator = cas726_project.evaluator:main'
         ],
     },
