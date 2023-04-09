@@ -6,8 +6,7 @@ from gym import spaces
 from rclpy.action import ActionClient
 
 from rclpy.node import Node
-from geometry_msgs.msg import PoseStamped
-from geometry_msgs.msg import PoseWithCovarianceStamped
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from nav_msgs.msg import OccupancyGrid
 from nav2_msgs.action import NavigateToPose
 
