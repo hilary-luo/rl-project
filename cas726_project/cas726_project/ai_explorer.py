@@ -1,14 +1,22 @@
 import rclpy
 from cas726_project.nav_env import *
+from cas726_project.nav_env_train import *
 
 from os import makedirs
 from rclpy.node import Node
 
-from stable_baselines3 import TD3
+from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import CheckpointCallback
+from stable_baselines3.common.noise import NormalActionNoise
 
 from stable_baselines3.common.env_checker import check_env
+
+LOG_DIR = './td3_project_monitor'
+LOG_DIR_TENSORBOARD = './td3_project_tensorboard'
+MODEL_CHECKPOINT_SAVE_PATH = './td3_nav_checkpoint'
+MODEL_SAVE_PATH = 'td3_nav_model'
+MODEL_LOAD_PATH = 'td3_nav_model'
 
 class AI_Explorer(Node):
     def __init__(self, load_path=None):
@@ -16,7 +24,8 @@ class AI_Explorer(Node):
         super().__init__('ai_explorer')
 
         # Create a custom environment for the agent
-        self.env = NavEnv()
+        #self.env = NavEnv()
+        self.env = NavEnvTrain()
 
         # Create logging folder
         makedirs(LOG_DIR, exist_ok=True)
@@ -27,15 +36,21 @@ class AI_Explorer(Node):
         check_env(self.env)
         self.model = None
         if (load_path == None):
+            # Add some action noise for exploration
+            n_actions = self.env.action_space.shape[-1]
+            action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=0.01 * np.ones(n_actions))
+
             # Create the RL Agent
             # Define the neural network architecture for the agent
-            self.model = TD3("MultiInputPolicy", self.env, verbose=1, buffer_size=10000, learning_starts=20, tensorboard_log=LOG_DIR_TENSORBOARD)
+            #self.model = PPO("MultiInputPolicy", self.env, verbose=2, buffer_size=10000, learning_rate=0.0001, learning_starts=100, batch_size = 10, 
+            #                 train_freq=(100,'step'), action_noise=action_noise, seed=12, tensorboard_log=LOG_DIR_TENSORBOARD)
+            self.model = PPO("MultiInputPolicy", self.env, verbose=2, batch_size = 32, n_steps=512, seed=12, tensorboard_log=LOG_DIR_TENSORBOARD)
         else:
-            self.model = TD3.load(load_path)
+            self.model = PPO.load(load_path)
             self.model.set_env(self.env)
         # Set up a callback to save model checkpoints during training
-        self.checkpoint_callback = CheckpointCallback(save_freq=10, save_path=MODEL_CHECKPOINT_SAVE_PATH, name_prefix='model')
-        print('TD3 Agent initialized')
+        self.checkpoint_callback = CheckpointCallback(save_freq=100, save_path=MODEL_CHECKPOINT_SAVE_PATH, name_prefix='model')
+        print('PPO Agent initialized')
 
         print('AI Explorer Node initialized')
 
@@ -49,8 +64,8 @@ class AI_Explorer(Node):
         return action
 
     def learn(self, save_path):
-        # Update the agent's policy using the TD3 algorithm
-        self.model.learn(total_timesteps=int(5), callback=self.checkpoint_callback)
+        # Update the agent's policy using the PPO algorithm
+        self.model.learn(total_timesteps=int(12000), callback=self.checkpoint_callback)
         print('Completed Learn')
         # Save the updated model
         self.model.save(save_path)

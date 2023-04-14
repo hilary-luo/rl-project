@@ -1,0 +1,12 @@
+# Goal definition
+geometry_msgs/Pose pose   # Target pose
+float32 speed             # meters/sec, actual speed may be lower due to computational limits
+---
+# Result definition
+bool success # False if no map loaded, robot not spawned, goal not in known free space, or path not computable
+---
+# Feedback definition
+geometry_msgs/Pose current_pose
+float32 navigation_time          # seconds
+float32 distance_remaining       # meters
+float32 estimated_time_remaining # seconds, not valid if requested speed is too high for computational limits

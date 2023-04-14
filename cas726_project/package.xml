@@ -7,6 +7,17 @@
   <maintainer email="103377417+hilary-luo@users.noreply.github.com">hluo</maintainer>
   <license>TODO: License declaration</license>
 
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>gym-pip</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>python-imaging</exec_depend>
+  <exec_depend>python-numpy</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>robot_sim</exec_depend>
+  <exec_depend>python-skimage</exec_depend>
+
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>

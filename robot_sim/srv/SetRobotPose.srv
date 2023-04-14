@@ -1,0 +1,5 @@
+# Request definition
+geometry_msgs/Pose pose  # Spawn/teleport the robot to the given location
+---
+# Response definition
+bool success  # True if robot spawned successfully, false if invalid location or no map loaded

@@ -1,0 +1,5 @@
+# Request definition
+bool keep_robot # If true, the robot is left in its last known location, otherwise robot is removed
+---
+# Response definition
+bool success # True if map reset successfully, false if no map has been loaded

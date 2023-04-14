@@ -1,0 +1,10 @@
+# Request definition
+string map_path    # Path to map image file "/home/usr/path/to/maps/floor.png"
+uint8 threshold    # 0-255, pixels with grayscale value above (lighter) are marked free and below (darker) are marked occupied
+float32 resolution # meters/cell
+bool flip          # If true, flip map horizontally
+uint8 rotate       # Rotate image by rotate * 90 degrees clockwise
+---
+# Response definition
+bool success               # True if map loaded successfully, false if file does not exist, not a vaild image > 100 x 100 pixels, or invalid resolution
+nav_msgs/OccupancyGrid map # The entire loaded map, valid only if success is true
