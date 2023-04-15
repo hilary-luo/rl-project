@@ -1,6 +1,7 @@
 import rclpy
 import numpy as np
 import sys
+import random
 
 import gym
 from gym import spaces
@@ -18,10 +19,22 @@ from robot_sim.action import NavigateToPose
 MAP_MAX_POOLING = 2
 AI_MAP_DIM = 256
 LOG_DIR = './td3_project_monitor'
-MAP_PATH = ['./maps/map-simple-1.bmp',
-            './maps/map-small.bmp']
+MAP_PATH = ['./maps/map-small-0.bmp',
+            './maps/map-small-1.bmp',
+            './maps/map-small-2.bmp',
+            './maps/map-small-3.bmp',
+            './maps/map-small-4.bmp',
+            './maps/map-small-5.bmp',
+            './maps/map-small-6.bmp',
+            './maps/map-small-7.bmp',
+            './maps/map-small-8.bmp',
+            './maps/map-small-9.bmp',
+            './maps/map-small-10.bmp',]
 
-COMPLETION_PERCENTAGE = 0.8 # of known full map
+RANDOM_MAP = False
+MAP_NUM = 10
+
+COMPLETION_PERCENTAGE = 0.9 # of known full map
 LEARNING_RECORD_PATH = f'{LOG_DIR}/training-record.csv'
 
 # Custom Gym environment for navigation task
@@ -70,8 +83,14 @@ class NavEnvTrain(gym.Env, Node):
         self.sim_set_pose_client.wait_for_service()
 
         # Load the map into the simulator
+        self.load_map(MAP_NUM)
+
+        print('Environment Node initialized')
+
+    def load_map(self, map_num):
+        # Load the map into the simulator
         req = LoadMap.Request()
-        req.map_path = MAP_PATH[0]
+        req.map_path = MAP_PATH[map_num]
         req.threshold = 200
         req.resolution = 0.05
         req.flip = False
@@ -85,29 +104,34 @@ class NavEnvTrain(gym.Env, Node):
         
         self.max_free_pixels = self.determineDoneCondition(res.map)
 
-        print('Environment Node initialized')
-
     def determineDoneCondition(self, map):
-        max_pixels = round(np.sum(np.array(map.data) == 0)/(MAP_MAX_POOLING*MAP_MAX_POOLING))
+        max_pixels = round(np.sum(np.array(map.data) == 0))
         #print(f'Max number of pixels to map is {max_pixels} or {max_pixels*100/round(len(map.data)/(MAP_MAX_POOLING*MAP_MAX_POOLING)):.2f}% of total pixels')
         return max_pixels
 
     def isReady(self):
+        # Verify that all of the messages have been received since 
         return (not self.map_reset_status and not self.pose_reset_status and not self.costmap_reset_status)
 
-    def reset(self): #TODO: Reset the Nav2 map
+    def reset(self):
         
-        # Load the map into the simulator
-        req = ResetMap.Request()
-        req.keep_robot = False
-        future = self.sim_reset_map_client.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
-        res = future.result()
-        if (not res.success):
-            print('Failed to reset map')
-            sys.exit(1)
+        if RANDOM_MAP:
+            ran_num = random.randint(0,9)
+
+            self.load_map(ran_num)
         
-        # Load the map into the simulator
+        else:
+            # Reset the map in the simulator
+            req = ResetMap.Request()
+            req.keep_robot = False
+            future = self.sim_reset_map_client.call_async(req)
+            rclpy.spin_until_future_complete(self, future)
+            res = future.result()
+            if (not res.success):
+                print('Failed to reset map')
+                sys.exit(1)
+
+        # Set Robot Pose in the Simulator
         req = SetRobotPose.Request()
         req.pose = Pose()
         req.pose.position.x = 0.0
@@ -127,8 +151,8 @@ class NavEnvTrain(gym.Env, Node):
         self.map_reset_status = True
         self.pose_reset_status = True
         self.costmap_reset_status = True
+        print('Waiting for reset')
         while rclpy.ok() and not self.isReady():
-            print('waiting for reset')
             rclpy.spin_once(self)
         print('Environment reset')
         return self._get_obs()
@@ -146,51 +170,47 @@ class NavEnvTrain(gym.Env, Node):
         
         # Set the next goal pose for Nav2
         goal_pose = self.action_space_to_map_frame(action)
-        map_2d_array = self.map_msg_to_obs_space(self.map, squeeze=True)
-        costmap_2d_array = self.map_msg_to_obs_space(self.costmap, squeeze=True)
-        # np.savetxt("/home/hluo/Downloads/map_obs_space.csv", map_2d_array, delimiter = ",")
-        # np.savetxt("/home/hluo/Downloads/costmap_obs_space.csv", costmap_2d_array, delimiter = ",")
-        # np.savetxt("/home/hluo/Downloads/map_full.csv",np.array(self.map.data, dtype=np.int8).reshape(self.map.info.height, self.map.info.width), delimiter = ",")
-        # np.savetxt("/home/hluo/Downloads/costmap_full.csv",np.array(self.costmap.data, dtype=np.int8).reshape(self.costmap.info.height, self.costmap.info.width), delimiter = ",")
 
-        action_x = round((action[0].item()+1)*(AI_MAP_DIM-1)/2.0)
-        action_y = round((action[1].item()+1)*(AI_MAP_DIM-1)/2.0)
+        action_position_x = round((action[0].item()+1)*(AI_MAP_DIM-1)/2.0)
+        action_position_y = round((action[1].item()+1)*(AI_MAP_DIM-1)/2.0)
 
         # Determine if the robot should move to the goal
         # print(f"Goal Pose is {goal_pose.pose.position.x:.2f}, {goal_pose.pose.position.y:.2f} aka action {action_x} {action_y}")
 
-        # TODO: Do I need to check for a particular radius of not unknown
-        if (map_2d_array[action_y][action_x] == -1):
+        while ((self.map.info.width != self.costmap.info.width) or (self.map.info.height != self.costmap.info.height)):
+            rclpy.spin_once(self)
+
+        map_data_index = action_position_y*MAP_MAX_POOLING*self.map.info.width + action_position_x*MAP_MAX_POOLING
+
+        if ((action_position_x*MAP_MAX_POOLING >= self.map.info.width) or (action_position_y*MAP_MAX_POOLING >= self.map.info.height)):
+            print(f'Pose {goal_pose.pose.position.x:.2f}, {goal_pose.pose.position.y:.2f} is outside map, skipping navigation')
+            invalid_goal = True
+
+        elif (self.map.data[map_data_index] == -1):
             print(f'Pose {goal_pose.pose.position.x:.2f}, {goal_pose.pose.position.y:.2f} is unknown space, skipping navigation')
             invalid_goal = True
             
-        elif (map_2d_array[action_y][action_x] >= 50):
+        elif (self.map.data[map_data_index] >= 50):
             print(f'Pose {goal_pose.pose.position.x:.2f}, {goal_pose.pose.position.y:.2f} is occupied space, skipping navigation')
             invalid_goal = True
 
-        # TODO: what should the threshold be for the costmap to avoid the blue area
-        elif (costmap_2d_array[action_y][action_x] >= 20):
+        elif (self.costmap.data[map_data_index] >= 20):
             print(f'Pose {goal_pose.pose.position.x:.2f}, {goal_pose.pose.position.y:.2f} is near occupied space, skipping navigation')
             invalid_goal = True
-            print(f"Occupancy value: {map_2d_array[action_y][action_x]}    Costmap value {costmap_2d_array[action_y][action_x]}")
 
         # TODO: what should the threshold be for the costmap to avoid the blue area
-        elif (abs(action_x - action_x_prev) < 5 and abs(action_y - action_y_prev) < 5):
+        elif (abs(action_position_x - action_x_prev) < 5 and abs(action_position_y - action_y_prev) < 5):
             print(f'Pose {goal_pose.pose.position.x:.2f}, {goal_pose.pose.position.y:.2f} is too close to the current position, skipping navigation')
             invalid_goal = True
 
         else:
-            # print(f"Action x: {action_x}  Old position x: {action_x_prev} Action y: {action_y}  Old position y: {action_y_prev}")
-            # print(f"Occupancy value: {map_2d_array[action_y][action_x]}    Costmap value {costmap_2d_array[action_y][action_x]}")
             # Send the goal pose to the navigation stack
-            #print('Sending the pose')
             nav2_goal_msg = NavigateToPose.Goal()
             nav2_goal_msg.pose = goal_pose.pose
             nav2_goal_msg.speed = 1000.0 # m/s
             nav2_future = self.sim_nav_client.send_goal_async(nav2_goal_msg, self.nav_callback)
 
             # Wait for the navigation to complete before taking the next step
-            #print('Checking goal acceptance')
             rclpy.spin_until_future_complete(self, nav2_future)
             goal_handle = nav2_future.result()
 
@@ -211,14 +231,14 @@ class NavEnvTrain(gym.Env, Node):
         if invalid_goal:
             reward = -1
         else:
-            map_2d_array = self.map_msg_to_obs_space(self.map, squeeze=True)
             # Compute the reward (number of new pixels mapped - penalty for travel distance)
-            old_pixels = self.visited_pixels.copy() #TODO: Update visited pixels on the first map / should sit for a couple of seconds and then set this and then start -> maybe handle this in main
-            self.visited_pixels = (map_2d_array >= 0).astype(int)
-            free_pixels = np.sum((map_2d_array == 0).astype(int))
+            old_pixels = self.visited_pixels #TODO: Update visited pixels on the first map / should sit for a couple of seconds and then set this and then start -> maybe handle this in main
+            map_data = np.array(self.map.data)
+            self.visited_pixels = np.sum((map_data >= 0).astype(int))
+            free_pixels = np.sum((map_data == 0).astype(int))
             new_pixels = np.sum(self.visited_pixels - old_pixels)
 
-            reward_pos = new_pixels/2000
+            reward_pos = new_pixels/8000
             reward_neg = np.linalg.norm(np.array([robot_pose_in_action[0], robot_pose_in_action[1]]) - np.array([action[0].item(), action[1].item()]))/2
             # TODO: fix reward multipliers
             
@@ -230,8 +250,8 @@ class NavEnvTrain(gym.Env, Node):
             # Check if the goal is reached
             # perc_pixels_visited = (np.sum(self.visited_pixels))/(AI_MAP_DIM*AI_MAP_DIM)
             done = bool(free_pixels > COMPLETION_PERCENTAGE*self.max_free_pixels)
-            print(f"Reward Components - reward: {reward_pos} Penalty: {reward_neg}")
-            print(f'Reward: {reward:.3f}              Done: {done} - visited {new_pixels} new pixels making a total of {free_pixels/self.max_free_pixels*100:.1f}% of free pixels\n')
+            #print(f"Reward Components - reward: {reward_pos} Penalty: {reward_neg}")
+            print(f'Reward: {reward:.3f}  Done: {done} - visited {new_pixels} new pixels making a total of {free_pixels/self.max_free_pixels*100:.1f}% of free pixels')
             # np.savetxt("/home/hluo/Downloads/visited_pixels.csv",np.array(self.visited_pixels, dtype=np.int8).reshape(AI_MAP_DIM, AI_MAP_DIM), delimiter = ",")
             
         # Update the observation (occupancy grid map and robot pose)
@@ -249,7 +269,7 @@ class NavEnvTrain(gym.Env, Node):
     def _get_obs(self):
         return {'map': self.map_msg_to_obs_space(self.map), 'robot_pose': self.map_frame_to_action_space(self.robot_pose)}
 
-    def map_msg_to_obs_space(self, map_msg, squeeze=False):
+    def map_msg_to_obs_space(self, map_msg):
         if (map_msg is None):
             return None
         # print(f'Map is {map_msg.info.height} by {map_msg.info.width}')
@@ -261,9 +281,6 @@ class NavEnvTrain(gym.Env, Node):
         
         # Resample the map with max pooling and then pad it with -1's to the full size
         obs_space_map = skimage.measure.block_reduce(padded_map,(MAP_MAX_POOLING,MAP_MAX_POOLING), np.max)
-        if (squeeze):
-            return obs_space_map
-        
         return np.expand_dims(obs_space_map.astype(np.uint8),axis=2)
 
 
@@ -290,7 +307,7 @@ class NavEnvTrain(gym.Env, Node):
         self.map_reset_status = False
         #print('Map Callback')
         if (self.visited_pixels is None):
-            self.visited_pixels = self.map_msg_to_obs_space(self.map, squeeze=True)
+            self.visited_pixels = np.sum((np.array(map_msg.data) >= 0).astype(int))
 
     def costmap_callback(self, costmap_msg):
         self.costmap = costmap_msg

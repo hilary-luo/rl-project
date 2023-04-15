@@ -65,7 +65,7 @@
 #define ROBOT_RADIUS     0.2 // meters
 #define LASER_RANGE      12  // meters
 #define LASER_SCAN_LINES 1000
-#define RVIZ_PERIOD      250 // milliseconds
+#define RVIZ_PERIOD      100 // milliseconds
 #define MAP_MIN_SIZE     100 // cells for height and width
 #define PATH_STRIDE_MAX  5   // maximum number of path cells to stride in 1 iteration, limits navigation speed
 
@@ -432,6 +432,7 @@ private:
             const std::lock_guard<std::mutex> lock(data_mutex);
             path.clear();
         }
+        rviz_callback();
         if(rclcpp::ok() && response->success) 
             goal_handle->succeed(response);
         else
