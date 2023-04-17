@@ -1,0 +1,6 @@
+# Request definition
+geometry_msgs/Pose pose   # Target pose
+---
+# Response definition
+bool success  # False if no map loaded, robot not spawned, goal not in known free space, or path not computable
+nav_msgs/Path path

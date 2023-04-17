@@ -23,6 +23,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/LoadMap.srv"
   "srv/ResetMap.srv"
   "srv/SetRobotPose.srv"
+  "srv/ComputePath.srv"
   "action/NavigateToPose.action"
   DEPENDENCIES builtin_interfaces std_msgs action_msgs geometry_msgs nav_msgs
 )

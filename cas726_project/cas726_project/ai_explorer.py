@@ -4,6 +4,7 @@ from cas726_project.nav_env_train import *
 from cas726_project.evaluator import *
 
 from os import makedirs
+from os.path import exists
 from rclpy.node import Node
 
 from stable_baselines3 import PPO, TD3, SAC
@@ -13,15 +14,15 @@ from stable_baselines3.common.noise import NormalActionNoise
 
 from stable_baselines3.common.env_checker import check_env
 
-LOG_DIR = './ppo_project_monitor'
-LOG_DIR_TENSORBOARD = './TensorBoard/ppo_project_tensorboard'
-MODEL_CHECKPOINT_SAVE_PATH = './ppo_nav_checkpoint'
-TB_LOG_NAME = f'PPO-April14-day-map-10'
-MODEL_SAVE_PATH = 'ppo_nav_model_10'
-MODEL_LOAD_PATH = MODEL_SAVE_PATH
+LOG_DIR = './sac_project_monitor'
+LOG_DIR_TENSORBOARD = './TensorBoard/sac_project_tensorboard'
+MODEL_CHECKPOINT_SAVE_PATH = './sac_nav_checkpoint'
+TB_LOG_NAME = f'Model1-SAC-April15-night-map-10'
+MODEL_SAVE_PATH = 'sac_nav_model_12'
+MODEL_LOAD_PATH = 'best_ppo-model_5_99840_steps'
 
-TRAIN_OPTION = True
-LOAD_MODEL_OPTION = False
+CUSTOM_SIM_OPTION = True
+TRAIN_OPTION = False
 
 class AI_Explorer(Node):
     def __init__(self, load_path=None):
@@ -30,7 +31,7 @@ class AI_Explorer(Node):
 
         # Create a custom environment for the agent
         self.env = None
-        if TRAIN_OPTION:
+        if CUSTOM_SIM_OPTION:
             self.env = NavEnvTrain()
         else:
             self.env = NavEnv()
@@ -41,23 +42,26 @@ class AI_Explorer(Node):
 
         # Set up an evaluation environment for the agent
         self.env = Monitor(self.env, filename=LOG_DIR)
-        check_env(self.env)
+        if TRAIN_OPTION:
+            check_env(self.env)
         self.model = None
         if (load_path == None):
             # Add some action noise for exploration
-            n_actions = self.env.action_space.shape[-1]
-            action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=0.01 * np.ones(n_actions))
+            #n_actions = self.env.action_space.shape[-1]
+            #action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=0.01 * np.ones(n_actions))
 
             # Create the RL Agent
             # Define the neural network architecture for the agent
-            #self.model = SAC("MultiInputPolicy", self.env, verbose=2, buffer_size=10000, batch_size=128, tensorboard_log=LOG_DIR_TENSORBOARD)
+            #self.model = SAC("MultiInputPolicy", self.env, verbose=2, buffer_size=10000, train_freq=(128, "step"), batch_size=64, tensorboard_log=LOG_DIR_TENSORBOARD)
             #self.model = TD3("MultiInputPolicy", self.env, verbose=2, buffer_size=10000, batch_size = 64, train_freq=(256,'step'), action_noise=action_noise, seed=12, tensorboard_log=LOG_DIR_TENSORBOARD)
             #self.model = TD3("MultiInputPolicy", self.env, verbose=2, buffer_size=10000, learning_rate=0.0001, learning_starts=100, batch_size = 10, 
             #                 train_freq=(100,'step'), action_noise=action_noise, seed=12, tensorboard_log=LOG_DIR_TENSORBOARD)
             self.model = PPO("MultiInputPolicy", self.env, verbose=2, batch_size = 32, n_steps=512, seed=12, tensorboard_log=LOG_DIR_TENSORBOARD)
         else:
-            self.model = PPO.load(load_path)
+            self.model = PPO.load(f'{load_path}.zip')
+            #self.model = SAC.load(load_path)
             self.model.set_env(self.env)
+            print(f'Loaded model {load_path}')
         # Set up a callback to save model checkpoints during training
         self.checkpoint_callback = CheckpointCallback(save_freq=512, save_path=MODEL_CHECKPOINT_SAVE_PATH, name_prefix='model')
         print('Agent initialized')
@@ -82,32 +86,31 @@ class AI_Explorer(Node):
 
     def execute(self, state):
         action = self.predict(state)
-        self.env.step(action)
-
-    def check_done(self):
-        ''
+        return self.env.step(action)
 
 def main(args=None):
     rclpy.init(args=args)
     ai_explorer = None
-    if (LOAD_MODEL_OPTION or not TRAIN_OPTION):
+    if exists(f'{MODEL_LOAD_PATH}.zip'):
         ai_explorer = AI_Explorer(MODEL_LOAD_PATH)
     else:
         ai_explorer = AI_Explorer()
 
-    if (TRAIN_OPTION):
+    if TRAIN_OPTION:
         ai_explorer.learn(MODEL_SAVE_PATH)
     else:
         done = False
-        evaluator = Evaluator()
-        evaluator.start()
+        state = ai_explorer.env.reset()
+
+        eval_status = Bool()
+        eval_status.data = True
+        ai_explorer.env.evaluation_publisher.publish(eval_status)
         while not done:
-            ai_explorer.predict()
-            ai_explorer.execute()
-            done = ai_explorer.check_done()
-        evaluator.stop()
-        input('Press enter to close...')
-        evaluator.destroy_node()
+            state, reward, done, ____ = ai_explorer.execute(state)
+            
+        eval_status.data = False
+        ai_explorer.env.evaluation_publisher.publish(eval_status)
+
 
     # Destroy the node explicitly
     # (optional - otherwise it will be done automatically

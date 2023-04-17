@@ -6,10 +6,12 @@ import random
 import gym
 from gym import spaces
 from rclpy.action import ActionClient
+import csv
 
 from rclpy.node import Node
 from geometry_msgs.msg import Pose, PoseStamped
 from nav_msgs.msg import OccupancyGrid
+from std_msgs.msg import Bool
 
 import skimage.measure
 
@@ -29,10 +31,11 @@ MAP_PATH = ['./maps/map-small-0.bmp',
             './maps/map-small-7.bmp',
             './maps/map-small-8.bmp',
             './maps/map-small-9.bmp',
-            './maps/map-small-10.bmp',]
+            './maps/map-small-10.bmp',
+            './maps/map-small-11.bmp',]
 
 RANDOM_MAP = False
-MAP_NUM = 10
+MAP_NUM = 5
 
 COMPLETION_PERCENTAGE = 0.9 # of known full map
 LEARNING_RECORD_PATH = f'{LOG_DIR}/training-record.csv'
@@ -65,15 +68,14 @@ class NavEnvTrain(gym.Env, Node):
         self.costmap_reset_status = True
 
         # Set up publishers, subscribers and clients
-        self.sim_nav_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
         self.map_subscriber = self.create_subscription(OccupancyGrid, '/map', self.map_callback, 1)
-        # self.pose_subscriber = self.create_subscription(PoseWithCovarianceStamped, '/pose', self.pose_callback, 1)
         self.pose_subscriber = self.create_subscription(PoseStamped, '/pose', self.pose_callback, 1)
-        # self.costmap_subscriber = self.create_subscription(OccupancyGrid, '/global_costmap/costmap', self.costmap_callback, 1)
         self.costmap_subscriber = self.create_subscription(OccupancyGrid, '/costmap', self.costmap_callback, 1)
+        self.sim_nav_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
         self.sim_load_map_client = self.create_client(LoadMap, 'load_map')
         self.sim_reset_map_client = self.create_client(ResetMap, 'reset_map')
         self.sim_set_pose_client = self.create_client(SetRobotPose, 'set_robot_pose')
+        self.evaluation_publisher = self.create_publisher(Bool, '/evaluation', 1)
 
         # Wait for simulator to fully activate
         print('Waiting for simulation services')
@@ -84,6 +86,12 @@ class NavEnvTrain(gym.Env, Node):
 
         # Load the map into the simulator
         self.load_map(MAP_NUM)
+
+        self.file_name = f'ai_explorer_action_record_map{MAP_NUM}-{round(COMPLETION_PERCENTAGE*100)}-model5'
+
+        with open(str(self.file_name), mode='w') as csv_file:
+            csv_writer = csv.writer(csv_file, delimiter=',')
+            csv_writer.writerow(['Action X', 'Action Y', 'Reward'])
 
         print('Environment Node initialized')
 
@@ -205,15 +213,14 @@ class NavEnvTrain(gym.Env, Node):
 
         else:
             # Send the goal pose to the navigation stack
-            nav2_goal_msg = NavigateToPose.Goal()
-            nav2_goal_msg.pose = goal_pose.pose
-            nav2_goal_msg.speed = 1000.0 # m/s
-            nav2_future = self.sim_nav_client.send_goal_async(nav2_goal_msg, self.nav_callback)
+            goal_msg = NavigateToPose.Goal()
+            goal_msg.pose = goal_pose.pose
+            goal_msg.speed = 1.0 # m/s
+            future = self.sim_nav_client.send_goal_async(goal_msg)
 
             # Wait for the navigation to complete before taking the next step
-            rclpy.spin_until_future_complete(self, nav2_future)
-            goal_handle = nav2_future.result()
-
+            rclpy.spin_until_future_complete(self, future)
+            goal_handle = future.result()
             result_future = goal_handle.get_result_async()
 
             # print('Waiting for navigation to complete')
@@ -243,7 +250,7 @@ class NavEnvTrain(gym.Env, Node):
             # TODO: fix reward multipliers
             
             if (new_pixels < 50):
-                reward = -1
+                reward = -0.5
             else:
                 reward = max(min(1,reward_pos - reward_neg),0)
 
@@ -256,7 +263,10 @@ class NavEnvTrain(gym.Env, Node):
             
         # Update the observation (occupancy grid map and robot pose)
         obs = self._get_obs()
-        #print(f'Observation: {obs}')
+
+        with open(self.file_name , mode='a') as csv_file:
+            csv_writer = csv.writer(csv_file, delimiter=',')
+            csv_writer.writerow([action_position_x, action_position_y, reward])
 
         return obs, reward, done, {'info':42}
 
@@ -288,15 +298,13 @@ class NavEnvTrain(gym.Env, Node):
         # Going from actual map frame (m, m, rad) to the AI Obs / Action format (0-64, 0-64, rad)
         x = (2*(pose_in.pose.position.x - self.map.info.origin.position.x)/(self.map.info.resolution*MAP_MAX_POOLING*(AI_MAP_DIM-1))) - 1
         y = (2*(pose_in.pose.position.y - self.map.info.origin.position.y)/(self.map.info.resolution*MAP_MAX_POOLING*(AI_MAP_DIM-1))) - 1
-        # z = (pose_in.pose.orientation.z - self.map.info.origin.orientation.z)
         return np.array([x, y], dtype=np.float32)
     
     def action_space_to_map_frame(self, action):
         pose_out = PoseStamped()
         pose_out.header.frame_id = 'map'
-        pose_out.pose.position.x = (round((action[0].item()+1)*(AI_MAP_DIM-1)/2.0)*self.map.info.resolution*MAP_MAX_POOLING) + self.map.info.origin.position.x
-        pose_out.pose.position.y = (round((action[1].item()+1)*(AI_MAP_DIM-1)/2.0)*self.map.info.resolution*MAP_MAX_POOLING) + self.map.info.origin.position.y
-        pose_out.pose.orientation.z = 0.0 + self.map.info.origin.orientation.z
+        pose_out.pose.position.x = ((action[0].item()+1)*(AI_MAP_DIM-1)*self.map.info.resolution*MAP_MAX_POOLING/2.0) + self.map.info.origin.position.x
+        pose_out.pose.position.y = ((action[1].item()+1)*(AI_MAP_DIM-1)*self.map.info.resolution*MAP_MAX_POOLING/2.0) + self.map.info.origin.position.y
         return pose_out
 
     # Callbacks
@@ -305,24 +313,16 @@ class NavEnvTrain(gym.Env, Node):
         # print(f'Map is {map_msg.info.height} by {map_msg.info.width}')
         self.map = map_msg
         self.map_reset_status = False
-        #print('Map Callback')
         if (self.visited_pixels is None):
             self.visited_pixels = np.sum((np.array(map_msg.data) >= 0).astype(int))
 
     def costmap_callback(self, costmap_msg):
         self.costmap = costmap_msg
         self.costmap_reset_status = False
-        #print('Costmap Callback')
 
     def pose_callback(self, pose_msg):
         self.robot_pose = pose_msg
         self.pose_reset_status = False
-        #print('Pose Callback')
-
-
-    def nav_callback(self, msg):
-        #print('Nav Callback')
-        ''
 
     def __del__(self):
         # Cleanup the ROS node
