@@ -1,11 +1,13 @@
 import rclpy
 from cas726_project.nav_env import *
 from cas726_project.nav_env_train import *
+#from cas726_project.nav_env_train_2 import *
 from cas726_project.evaluator import *
 
 from os import makedirs
 from os.path import exists
 from rclpy.node import Node
+from time import sleep
 
 from stable_baselines3 import PPO, TD3, SAC
 from stable_baselines3.common.monitor import Monitor
@@ -17,9 +19,9 @@ from stable_baselines3.common.env_checker import check_env
 LOG_DIR = './sac_project_monitor'
 LOG_DIR_TENSORBOARD = './TensorBoard/sac_project_tensorboard'
 MODEL_CHECKPOINT_SAVE_PATH = './sac_nav_checkpoint'
-TB_LOG_NAME = f'Model1-SAC-April15-night-map-10'
-MODEL_SAVE_PATH = 'sac_nav_model_12'
-MODEL_LOAD_PATH = 'best_ppo-model_5_99840_steps'
+TB_LOG_NAME = f'SAC-2-April17-map-1'
+MODEL_SAVE_PATH = 'sac_nav_model2'
+MODEL_LOAD_PATH = 'ppo_nav_model_9'
 
 CUSTOM_SIM_OPTION = True
 TRAIN_OPTION = False
@@ -52,18 +54,21 @@ class AI_Explorer(Node):
 
             # Create the RL Agent
             # Define the neural network architecture for the agent
+            self.model = SAC("CnnPolicy", self.env, verbose=2, buffer_size=10000, train_freq=(1024, "step"), batch_size=64, tensorboard_log=LOG_DIR_TENSORBOARD)
             #self.model = SAC("MultiInputPolicy", self.env, verbose=2, buffer_size=10000, train_freq=(128, "step"), batch_size=64, tensorboard_log=LOG_DIR_TENSORBOARD)
             #self.model = TD3("MultiInputPolicy", self.env, verbose=2, buffer_size=10000, batch_size = 64, train_freq=(256,'step'), action_noise=action_noise, seed=12, tensorboard_log=LOG_DIR_TENSORBOARD)
             #self.model = TD3("MultiInputPolicy", self.env, verbose=2, buffer_size=10000, learning_rate=0.0001, learning_starts=100, batch_size = 10, 
             #                 train_freq=(100,'step'), action_noise=action_noise, seed=12, tensorboard_log=LOG_DIR_TENSORBOARD)
-            self.model = PPO("MultiInputPolicy", self.env, verbose=2, batch_size = 32, n_steps=512, seed=12, tensorboard_log=LOG_DIR_TENSORBOARD)
+            #self.model = PPO("CnnPolicy", self.env, verbose=2, batch_size = 64, n_steps=1024, seed=12, 
+            #                 tensorboard_log=LOG_DIR_TENSORBOARD)
         else:
+            print('Loaded model')
             self.model = PPO.load(f'{load_path}.zip')
-            #self.model = SAC.load(load_path)
+            #self.model = SAC.load(f'{load_path}.zip')
             self.model.set_env(self.env)
             print(f'Loaded model {load_path}')
         # Set up a callback to save model checkpoints during training
-        self.checkpoint_callback = CheckpointCallback(save_freq=512, save_path=MODEL_CHECKPOINT_SAVE_PATH, name_prefix='model')
+        self.checkpoint_callback = CheckpointCallback(save_freq=1024, save_path=MODEL_CHECKPOINT_SAVE_PATH, name_prefix='model')
         print('Agent initialized')
 
         print('AI Explorer Node initialized')
@@ -79,7 +84,7 @@ class AI_Explorer(Node):
 
     def learn(self, save_path):
         # Update the agent's policy using the algorithm
-        self.model.learn(total_timesteps=int(512*25*8), callback=self.checkpoint_callback, reset_num_timesteps=False, tb_log_name=TB_LOG_NAME)
+        self.model.learn(total_timesteps=int(1024*100), callback=self.checkpoint_callback, reset_num_timesteps=False, tb_log_name=TB_LOG_NAME)
         print('Completed Learn')
         # Save the updated model
         self.model.save(save_path)
@@ -108,6 +113,7 @@ def main(args=None):
         while not done:
             state, reward, done, ____ = ai_explorer.execute(state)
             
+        sleep(5)
         eval_status.data = False
         ai_explorer.env.evaluation_publisher.publish(eval_status)
 

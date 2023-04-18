@@ -1,6 +1,7 @@
 import numpy as np
 import rclpy
 from copy import copy
+from time import sleep
 
 from rclpy.action import ActionClient
 from rclpy.node import Node
@@ -13,7 +14,7 @@ from std_msgs.msg import Bool
 from skimage import measure
 
 MIN_REGION_AREA = 10
-FRONTIER_TRIGGER_DISTANCE = 0.5
+FRONTIER_TRIGGER_DISTANCE = 0.3
 COMPLETION_PERCENTAGE = 0.95 # of known full map
 
 
@@ -45,7 +46,6 @@ class Frontier_Explorer(Node):
         self.map_msg = None
         self.pose_msg = None
         self.frontier_list = list()
-        self.print = False
 
         self.start_time = self.get_clock().now()
 
@@ -54,6 +54,7 @@ class Frontier_Explorer(Node):
         self.nav2_nav_client.wait_for_server()
 
         print('Frontier Explorer Node initialized')
+
 
     def find_frontiers(self):
         map = self.get_map()
@@ -110,7 +111,6 @@ class Frontier_Explorer(Node):
                 pose_temp.pose.position.y = y
                 nav2_goal_msg = ComputePathThroughPoses.Goal()
                 nav2_goal_msg.goals = [pose_temp]
-                #print(f'Goal is {x}, {y}')
                 nav2_goal_msg.use_start = False
                 nav2_future = self.nav2_path_client.send_goal_async(nav2_goal_msg)
 
@@ -142,13 +142,6 @@ class Frontier_Explorer(Node):
         self.publish_frontiers(labeled_frontier_map, map)
         print('Frontier count: ',len(self.frontier_list))
 
-    # Getters
-
-    def get_map(self):
-        return np.array(self.map_msg.data, dtype=np.int8).reshape(self.map_msg.info.height, self.map_msg.info.width)
-
-    def get_map_origin(self):
-        return (self.map_msg.info.origin.position.x, self.map_msg.info.origin.position.y)
 
     def publish_frontiers(self, labeled_frontier_map, map):
         labeled_map_np = np.array(labeled_frontier_map)
@@ -158,7 +151,7 @@ class Frontier_Explorer(Node):
         local_list.sort(reverse=True) # Order so pink will be the target
         for frontier in local_list:
             #print(frontier)
-            #print(f'Distance is {frontier[0]}, Label is {frontier[4]}, n is {n}')
+            #print(f'Distance is {frontier[ENUM_PATH_DISTANCE]}, Label is {frontier[ENUM_PATH_LABEL]}, n is {n}')
             n = n + 1
             processed_map[labeled_map_np == frontier[ENUM_LABEL]] = n
 
@@ -179,41 +172,49 @@ class Frontier_Explorer(Node):
         selected_frontier = self.frontier_list[0]
         return selected_frontier
 
+
     def go_to_frontier(self, frontier):
-
         print(f"Selected Frontier Pose is {frontier[ENUM_X]:.2f}, {frontier[ENUM_Y]:.2f} at distance {frontier[ENUM_PATH_DISTANCE]} and of size {frontier[ENUM_AREA]}")
+        
+        # Send the goal pose to the simulator
+        goal_msg = NavigateToPose.Goal()
+        goal_msg.pose.header.frame_id = 'map'
+        goal_msg.pose.pose.position.x = frontier[ENUM_X]
+        goal_msg.pose.pose.position.y = frontier[ENUM_Y]
+        goal_future = self.nav2_nav_client.send_goal_async(goal_msg)
 
-        # Send the goal pose to the navigation stack
-        print('Sending the pose')
-        nav2_goal_msg = NavigateToPose.Goal()
-        nav2_goal_msg.pose.header.frame_id = 'map'
-        nav2_goal_msg.pose.pose.position.x = frontier[ENUM_X]
-        nav2_goal_msg.pose.pose.position.y = frontier[ENUM_Y]
-        nav2_future = self.nav2_nav_client.send_goal_async(nav2_goal_msg)
-
-        # Wait for the navigation to complete before taking the next step
-        rclpy.spin_until_future_complete(self, nav2_future)
-        goal_handle = nav2_future.result()
+        # Wait for the navigation goal to be accepted before taking the next step
+        rclpy.spin_until_future_complete(self, goal_future)
+        goal_handle = goal_future.result()
 
         while (not goal_handle.accepted):
             print('Goal was rejected')
-            nav2_future = self.nav2_nav_client.send_goal_async(nav2_goal_msg)
-            rclpy.spin_until_future_complete(self, nav2_future)
-            goal_handle = nav2_future.result()
+            goal_future = self.nav2_nav_client.send_goal_async(goal_msg)
+            rclpy.spin_until_future_complete(self, goal_future)
+            goal_handle = goal_future.result()
+
 
     def check_done(self):
-        perc_pixels_visited = np.sum((np.array(self.map_msg.data) >= 0).astype(int)) / len(self.map_msg.data)
-        #print(f'Visited {perc_pixels_visited*100:.1f}% of pixels\n')
-        return (bool(perc_pixels_visited > COMPLETION_PERCENTAGE), self.start_time.nanoseconds, self.get_clock().now().nanoseconds)
+        pixels_visited = np.sum((np.array(self.map_msg.data) >= 0).astype(int))
+        return bool(pixels_visited > COMPLETION_PERCENTAGE*len(self.map_msg.data))
+
+
+    # Getters
+
+    def get_map(self):
+        return np.array(self.map_msg.data, dtype=np.int8).reshape(self.map_msg.info.height, self.map_msg.info.width)
+
+    def get_map_origin(self):
+        return (self.map_msg.info.origin.position.x, self.map_msg.info.origin.position.y)
+    
 
     # Callbacks
 
     def map_callback(self, map_msg):
-        # print(f'Map is {map_msg.info.height} by {map_msg.info.width}')
         self.map_msg = map_msg
     
-    def pose_callback(self, pose_msg_in):
-        self.pose_msg = pose_msg_in
+    def pose_callback(self, pose_msg):
+        self.pose_msg = pose_msg
 
 
 def main(args=None):
@@ -222,17 +223,18 @@ def main(args=None):
     frontier_explorer = Frontier_Explorer()
 
     while ((frontier_explorer.map_msg is None) or (frontier_explorer.pose_msg is None)):
-        print('waiting for reset')
+        print('Waiting for reset')
         rclpy.spin_once(frontier_explorer)
 
-    done = False
     old_frontier = None
 
     eval_status = Bool()
     eval_status.data = True
-
     frontier_explorer.evaluation_publisher.publish(eval_status)
-    while not done:
+
+    start_time = frontier_explorer.get_clock().now().nanoseconds
+
+    while not frontier_explorer.check_done():
         frontier_explorer.find_frontiers()
         frontier = frontier_explorer.select_frontier()
         if(frontier is not None):
@@ -241,19 +243,20 @@ def main(args=None):
             print('New frontier is none')
         if((frontier is not None) and ((old_frontier is None) or (abs(frontier[ENUM_X]-old_frontier[ENUM_X])+abs(frontier[ENUM_Y]-old_frontier[ENUM_Y]))>FRONTIER_TRIGGER_DISTANCE)):
             print(f'New frontier to explore at {frontier[ENUM_X]}, {frontier[ENUM_Y]}')
-            #print(frontier_explorer.frontier_list)
             frontier_explorer.go_to_frontier(frontier)
             old_frontier = frontier
             frontier_explorer.publisher_path.publish(frontier[ENUM_PATH])
         rclpy.spin_once(frontier_explorer) # Allows callbacks to update the map
-        done, start_time, curr_time = frontier_explorer.check_done()
 
+    stop_time = frontier_explorer.get_clock().now().nanoseconds
+
+    sleep(3)
     eval_status.data = False
     frontier_explorer.evaluation_publisher.publish(eval_status)
 
-    duration = curr_time - start_time
+    duration = (stop_time - start_time)/1e9
 
-    print(f'Exploration took {duration/1e9} seconds')
+    print(f'Exploration took {duration} seconds')
 
     frontier_explorer.destroy_node()
 

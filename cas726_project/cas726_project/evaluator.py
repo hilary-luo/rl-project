@@ -9,6 +9,8 @@ from std_msgs.msg import Bool
 import csv
 import sys
 
+MAP_UPDATE_INTERVAL = 0.5 # seconds
+
 class Evaluator(Node):
     def __init__(self):
         # Initialize ROS node
@@ -20,36 +22,37 @@ class Evaluator(Node):
         self.pose_subscriber = self.create_subscription(PoseStamped, '/pose', self.pose_callback, 1)
         self.evaluation_subscriber = self.create_subscription(Bool, '/evaluation', self.eval_callback, 1)
         self.path_publisher = self.create_publisher(Path, '/robot_path', 10)
-
-        map_update_interval_ = self.declare_parameter("map_update_interval", 1.0).value
-        
-        self.active = False
-        self.session_cnt = 0
-
+                
         self.path = Path()
         self.path.header.frame_id = '/map'
 
-        timer_ = self.create_timer(map_update_interval_ , self.timer_callback)
-        self.starting_time = float(self.get_clock().now().to_msg().sec)
+        self.timer_ = self.create_timer(MAP_UPDATE_INTERVAL , self.timer_callback)
+        self.starting_time = self.get_clock().now().nanoseconds
         self.prev_map = None
         self.current_map = None
+        self.active = False
         self.file_name = sys.argv[1]
+
         with open(str(self.file_name), mode='w') as csv_file:
             csv_writer = csv.writer(csv_file, delimiter=',')
             csv_writer.writerow(['Time', 'New Area', 'Total Area'])
             
         print('Evaluator Node initialized')
 
-    def eval_callback(self, eval_msg):
-        self.active = bool(eval_msg.data)
-        print('Evaluation status set to ', self.active)
 
     def reset(self):
-        self.path = Path()
-        self.session_cnt = self.session_cnt + 1
+        self.path.poses.clear()
+
+
+    def eval_callback(self, eval_msg):
+        self.active = bool(eval_msg.data)
+        self.starting_time = self.get_clock().now().nanoseconds
+        print('Evaluation status set to ', self.active)
+
 
     def map_callback(self, map_msg):
         self.current_map = map_msg
+
 
     def pose_callback(self, pose_msg):
         if self.active:
@@ -61,38 +64,24 @@ class Evaluator(Node):
 
         self.path_publisher.publish(self.path)
 
-    def timer_callback(self):
-        if not self.active:
-            return
-        if self.prev_map is None:
-            self.prev_map = self.current_map
-        else:
-            current_map = self.current_map
-            new_area = self.compute_new_area(current_map)
-            print(new_area)
 
-            self.get_logger().info(f"New area discovered: {new_area}")
-        
-            self.prev_map = current_map
+    def timer_callback(self):
+        if (not self.active) or (self.current_map is None):
+            return
+        if self.prev_map is not None:
+            new_area = self.compute_new_area()
+            self.get_logger().info(f"New area discovered: {new_area}")        
+        self.prev_map = self.current_map
 
     
-    def compute_new_area(self, current_map):
-        prev_map_data = self.prev_map.data
-        current_map_data = current_map.data
-        resolution = current_map.info.resolution
-        width = current_map.info.width
-
-        prev_free_cells = [i for i in range(len(prev_map_data)) if prev_map_data[i] == 0]
-        current_free_cells = [i for i in range(len(current_map_data)) if current_map_data[i] == 0]
-
-        prev_area = len(prev_free_cells) 
-        current_area = len(current_free_cells)
-
+    def compute_new_area(self):
+        prev_area = np.sum((np.array(self.prev_map.data) == 0).astype(int))
+        current_area = np.sum((np.array(self.current_map.data) == 0).astype(int))
         new_area = current_area - prev_area 
 
         with open(self.file_name , mode='a') as csv_file:
             csv_writer = csv.writer(csv_file, delimiter=',')
-            csv_writer.writerow([float(self.get_clock().now().to_msg().sec)-self.starting_time, new_area, current_area])
+            csv_writer.writerow([round((self.get_clock().now().nanoseconds - self.starting_time)/1e9, 2), new_area, current_area])
 
         return new_area
 
