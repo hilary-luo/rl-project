@@ -32,7 +32,7 @@ MAP_PATH = ['./maps/map-small-0.bmp',
             './maps/map-small-9.bmp',
             './maps/map-small-10.bmp',]
 
-MAP_NUM = 10
+MAP_NUM = 1
 
 #ENUM
 ENUM_PATH_DISTANCE = 0
@@ -98,11 +98,6 @@ class Frontier_Explorer_Sim(Node):
         free_map_msg.header = copy(self.map_msg.header)
         free_map_msg.info = copy(self.map_msg.info)
         free_map_msg.data = (free_map.flatten()*100).tolist()
-
-        frontier_map = np.zeros(map.shape)
-        for cell in frontier_cells:
-            frontier_map[int(cell[0]), int(cell[1])] = 1
-
         self.publisher_free.publish(free_map_msg)
 
         # Detect Frontiers in Unknown Cells
