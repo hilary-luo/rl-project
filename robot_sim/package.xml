@@ -4,7 +4,7 @@
   <name>robot_sim</name>
   <version>0.0.1</version>
   <description>Lightweight ROS2 robot simulator for exploration task</description>
-  <maintainer email="asriniva@uwo.ca">Anish Naidu</maintainer>
+  <maintainer email="103377417+hilary-luo@users.noreply.github.com">hluo</maintainer>
   <license>GPL-3.0-only</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

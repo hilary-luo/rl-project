@@ -33,12 +33,15 @@ MAP_PATH = ['./maps/map-small-0.bmp',
             './maps/map-small-8.bmp',
             './maps/map-small-9.bmp',
             './maps/map-small-10.bmp',
-            './maps/map-small-11.bmp',]
+            './maps/map-small-11.bmp']
+MAP_LIM_PATH = ['./maps/map-small-1.bmp',
+            './maps/map-small-5.bmp',
+            './maps/map-small-10.bmp']
 
-RANDOM_MAP = False
-MAP_NUM = 10
+RANDOM_MAP = True
+MAP_NUM = 1
 
-COMPLETION_PERCENTAGE = 0.9 # of known full map
+COMPLETION_PERCENTAGE = 0.95 # of known full map
 LEARNING_RECORD_PATH = f'{LOG_DIR}/training-record.csv'
 
 # Custom Gym environment for navigation task
@@ -85,7 +88,7 @@ class NavEnvTrain(gym.Env, Node):
         # Load the map into the simulator
         self.load_map(MAP_NUM)
 
-        self.file_name = f'ai_explorer_2_action_record_map{MAP_NUM}-{round(COMPLETION_PERCENTAGE*100)}-ppo-model2-1'
+        self.file_name = f'ai_explorer_2_action_record_map_rand-{round(COMPLETION_PERCENTAGE*100)}-sac'
 
         with open(str(self.file_name), mode='w') as csv_file:
             csv_writer = csv.writer(csv_file, delimiter=',')
@@ -96,7 +99,7 @@ class NavEnvTrain(gym.Env, Node):
     def load_map(self, map_num):
         # Load the map into the simulator
         req = LoadMap.Request()
-        req.map_path = MAP_PATH[map_num]
+        req.map_path = MAP_LIM_PATH[map_num]
         req.threshold = 200
         req.resolution = 0.05
         req.flip = False
@@ -114,7 +117,7 @@ class NavEnvTrain(gym.Env, Node):
     def reset(self):
         
         if RANDOM_MAP:
-            ran_num = random.randint(0,9)
+            ran_num = random.randint(0,2)
             self.load_map(ran_num)
         
         else:
@@ -200,7 +203,7 @@ class NavEnvTrain(gym.Env, Node):
             # Send the goal pose to the navigation stack
             goal_msg = NavigateToPose.Goal()
             goal_msg.pose = copy(goal_pose.pose)
-            goal_msg.speed = 3.0 # m/s
+            goal_msg.speed = 1000.0 # m/s
             future = self.sim_nav_client.send_goal_async(goal_msg)
 
             # Wait for the navigation to complete before taking the next step

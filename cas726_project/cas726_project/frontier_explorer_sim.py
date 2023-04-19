@@ -32,7 +32,7 @@ MAP_PATH = ['./maps/map-small-0.bmp',
             './maps/map-small-9.bmp',
             './maps/map-small-10.bmp',]
 
-MAP_NUM = 1
+MAP_NUM = 10
 
 #ENUM
 ENUM_PATH_DISTANCE = 0

@@ -1,7 +1,7 @@
 import rclpy
 from cas726_project.nav_env import *
-from cas726_project.nav_env_train import *
-#from cas726_project.nav_env_train_2 import *
+#from cas726_project.nav_env_train import *
+from cas726_project.nav_env_train_2 import *
 from cas726_project.evaluator import *
 
 from os import makedirs
@@ -19,12 +19,12 @@ from stable_baselines3.common.env_checker import check_env
 LOG_DIR = './sac_project_monitor'
 LOG_DIR_TENSORBOARD = './TensorBoard/sac_project_tensorboard'
 MODEL_CHECKPOINT_SAVE_PATH = './sac_nav_checkpoint'
-TB_LOG_NAME = f'SAC-2-April17-map-1'
-MODEL_SAVE_PATH = 'sac_nav_model2'
-MODEL_LOAD_PATH = 'ppo_nav_model_9'
+TB_LOG_NAME = f'SAC-April17-Rand'
+MODEL_SAVE_PATH = 'sac_nav_model2-rand'
+MODEL_LOAD_PATH = MODEL_SAVE_PATH
 
 CUSTOM_SIM_OPTION = True
-TRAIN_OPTION = False
+TRAIN_OPTION = True
 
 class AI_Explorer(Node):
     def __init__(self, load_path=None):
@@ -63,8 +63,8 @@ class AI_Explorer(Node):
             #                 tensorboard_log=LOG_DIR_TENSORBOARD)
         else:
             print('Loaded model')
-            self.model = PPO.load(f'{load_path}.zip')
-            #self.model = SAC.load(f'{load_path}.zip')
+            #self.model = PPO.load(f'{load_path}.zip')
+            self.model = SAC.load(f'{load_path}.zip')
             self.model.set_env(self.env)
             print(f'Loaded model {load_path}')
         # Set up a callback to save model checkpoints during training
