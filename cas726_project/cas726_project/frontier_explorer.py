@@ -1,3 +1,5 @@
+# Frontier based exploration for use with Turtlebot 4 simulator
+
 import numpy as np
 import rclpy
 from copy import copy
@@ -18,7 +20,7 @@ FRONTIER_TRIGGER_DISTANCE = 0.3
 COMPLETION_PERCENTAGE = 0.95 # of known full map
 
 
-#ENUM
+#Enums for Frontier List
 ENUM_PATH_DISTANCE = 0
 ENUM_AREA = 1
 ENUM_X = 2
@@ -47,20 +49,17 @@ class Frontier_Explorer(Node):
         self.pose_msg = None
         self.frontier_list = list()
 
-        self.start_time = self.get_clock().now()
-
         # Wait for navigation to fully activate
         print('Waiting for Nav2 server')
         self.nav2_nav_client.wait_for_server()
 
         print('Frontier Explorer Node initialized')
 
-
     def find_frontiers(self):
         map = self.get_map()
 
         # Detect Frontiers in Free Cells
-        free_map = (np.logical_and((map < 10), (map >= 0))).astype(int) # '1' are the open cells, '0' are the unknown or occupied cells
+        free_map = (np.logical_and((map < 10), (map >= 0))).astype(int) # '1' are the free cells, '0' are the unknown or occupied cells
         free_frontiers = measure.find_contours(free_map, 0.5)
         free_cells = list()
         for f in free_frontiers:
@@ -74,7 +73,7 @@ class Frontier_Explorer(Node):
         self.publisher_free.publish(free_map_msg)
 
         # Detect Frontiers in Unknown Cells
-        unknown_map = (map >= 0).astype(int) # 1 are the free or occupied cells, '0' are the unknown cells
+        unknown_map = (map >= 0).astype(int) # '1' are the free or occupied cells, '0' are the unknown cells
         unknown_frontiers = measure.find_contours(unknown_map, 0.5)
         unknown_cells = list()
         for f in unknown_frontiers:
@@ -150,8 +149,6 @@ class Frontier_Explorer(Node):
         local_list = self.frontier_list.copy()
         local_list.sort(reverse=True) # Order so pink will be the target
         for frontier in local_list:
-            #print(frontier)
-            #print(f'Distance is {frontier[ENUM_PATH_DISTANCE]}, Label is {frontier[ENUM_PATH_LABEL]}, n is {n}')
             n = n + 1
             processed_map[labeled_map_np == frontier[ENUM_LABEL]] = n
 
@@ -175,7 +172,7 @@ class Frontier_Explorer(Node):
 
     def go_to_frontier(self, frontier):
         print(f"Selected Frontier Pose is {frontier[ENUM_X]:.2f}, {frontier[ENUM_Y]:.2f} at distance {frontier[ENUM_PATH_DISTANCE]} and of size {frontier[ENUM_AREA]}")
-        
+
         # Send the goal pose to the simulator
         goal_msg = NavigateToPose.Goal()
         goal_msg.pose.header.frame_id = 'map'
@@ -228,6 +225,7 @@ def main(args=None):
 
     old_frontier = None
 
+    # Tell the evaluator to start recording progress
     eval_status = Bool()
     eval_status.data = True
     frontier_explorer.evaluation_publisher.publish(eval_status)
@@ -246,20 +244,22 @@ def main(args=None):
             frontier_explorer.go_to_frontier(frontier)
             old_frontier = frontier
             frontier_explorer.publisher_path.publish(frontier[ENUM_PATH])
+
         rclpy.spin_once(frontier_explorer) # Allows callbacks to update the map
 
     stop_time = frontier_explorer.get_clock().now().nanoseconds
 
-    sleep(3)
+    # Grace period for simulator / evaluator to catch up
+    sleep(5)
+
+    # Tell the evaluator to stop recording progress
     eval_status.data = False
     frontier_explorer.evaluation_publisher.publish(eval_status)
 
     duration = (stop_time - start_time)/1e9
-
     print(f'Exploration took {duration} seconds')
 
     frontier_explorer.destroy_node()
-
     rclpy.shutdown()
 
 

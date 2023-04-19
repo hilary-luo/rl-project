@@ -1,6 +1,9 @@
+# Frontier based exploration for use with custom simulator
+
 import numpy as np
 import rclpy
 import sys
+
 from copy import copy
 from time import sleep
 
@@ -20,21 +23,13 @@ MIN_REGION_AREA = 10
 FRONTIER_TRIGGER_DISTANCE = 0.3
 COMPLETION_PERCENTAGE = 0.999 # of known full map
 
-MAP_PATH = ['./maps/map-small-0.bmp',
-            './maps/map-small-1.bmp',
-            './maps/map-small-2.bmp',
-            './maps/map-small-3.bmp',
-            './maps/map-small-4.bmp',
-            './maps/map-small-5.bmp',
-            './maps/map-small-6.bmp',
-            './maps/map-small-7.bmp',
-            './maps/map-small-8.bmp',
-            './maps/map-small-9.bmp',
-            './maps/map-small-10.bmp',]
+MAP_PATH = ['./src/cas726_project/bitmap_maps/map-0.bmp',
+            './src/cas726_project/bitmap_maps/map-1.bmp',
+            './src/cas726_project/bitmap_maps/map-2.bmp']
 
-MAP_NUM = 10
+MAP_NUM = 1
 
-#ENUM
+#Enums for Frontier List
 ENUM_PATH_DISTANCE = 0
 ENUM_AREA = 1
 ENUM_X = 2
@@ -56,7 +51,6 @@ class Frontier_Explorer_Sim(Node):
         self.publisher_frontier = self.create_publisher(OccupancyGrid, '/frontier_cells', 10)
         self.publisher_path = self.create_publisher(Path, '/selected_path', 10)
         self.evaluation_publisher = self.create_publisher(Bool, '/evaluation', 1)
-
         self.sim_nav_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
         self.sim_load_map_client = self.create_client(LoadMap, 'load_map')
         self.sim_reset_map_client = self.create_client(ResetMap, 'reset_map')
@@ -82,12 +76,11 @@ class Frontier_Explorer_Sim(Node):
 
         print('Frontier Explorer Node initialized')
 
-
     def find_frontiers(self):
         map = self.get_map()
 
         # Detect Frontiers in Free Cells
-        free_map = (np.logical_and((map < 10), (map >= 0))).astype(int) # '1' are the open cells, '0' are the unknown or occupied cells
+        free_map = (np.logical_and((map < 10), (map >= 0))).astype(int) # '1' are the free cells, '0' are the unknown or occupied cells
         free_frontiers = measure.find_contours(free_map, 0.5)
         free_cells = list()
         for f in free_frontiers:
@@ -101,7 +94,7 @@ class Frontier_Explorer_Sim(Node):
         self.publisher_free.publish(free_map_msg)
 
         # Detect Frontiers in Unknown Cells
-        unknown_map = (map >= 0).astype(int) # 1 are the free or occupied cells, '0' are the unknown cells
+        unknown_map = (map >= 0).astype(int) # '1' are the free or occupied cells, '0' are the unknown cells
         unknown_frontiers = measure.find_contours(unknown_map, 0.5)
         unknown_cells = list()
         for f in unknown_frontiers:
@@ -180,8 +173,6 @@ class Frontier_Explorer_Sim(Node):
         local_list = self.frontier_list.copy()
         local_list.sort(reverse=True) # Order so pink will be the target
         for frontier in local_list:
-            #print(frontier)
-            #print(f'Distance is {frontier[ENUM_PATH_DISTANCE]}, Label is {frontier[ENUM_PATH_LABEL]}, n is {n}')
             n = n + 1
             processed_map[labeled_map_np == frontier[ENUM_LABEL]] = n
 
@@ -218,7 +209,7 @@ class Frontier_Explorer_Sim(Node):
 
 
     def load_map(self, map_num):
-        # Load the map into the simulator
+        # Load the map into the custom simulator
         req = LoadMap.Request()
         req.map_path = MAP_PATH[map_num]
         req.threshold = 200
@@ -287,6 +278,7 @@ def main(args=None):
 
     old_frontier = None
 
+    # Tell the evaluator to start recording progress
     eval_status = Bool()
     eval_status.data = True
     frontier_explorer.evaluation_publisher.publish(eval_status)
@@ -313,16 +305,17 @@ def main(args=None):
 
     stop_time = frontier_explorer.get_clock().now().nanoseconds
 
-    sleep(3)
+    # Grace period for simulator / evaluator to catch up
+    sleep(5)
+
+    # Tell the evaluator to stop recording progress
     eval_status.data = False
     frontier_explorer.evaluation_publisher.publish(eval_status)
 
     duration = (stop_time - start_time)/1e9
-
     print(f'Exploration took {duration} seconds')
 
     frontier_explorer.destroy_node()
-
     rclpy.shutdown()
 
 
