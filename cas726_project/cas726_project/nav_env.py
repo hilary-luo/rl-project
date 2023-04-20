@@ -1,4 +1,5 @@
 # Reinforcement learning environment for autonomous exploration for use with Turtlebot 4 simulator
+# For use with ai_explorer node with USE_CUSTOM_SIM = False
 
 import rclpy
 import numpy as np
@@ -21,7 +22,7 @@ MAP_MAX_POOLING = 2 # Scaling factor to reduce map size for the observation spac
 AI_MAP_DIM = 256 # Environment can only support maps of max size AI_MAP_DIM*MAP_MAX_POOLING
 
 COMPLETION_PERCENTAGE = 0.9 # of known full map
-LEARNING_RECORD_PATH = f'./action_record/ai_action_record_{round(COMPLETION_PERCENTAGE*100)}'
+LEARNING_RECORD_PATH = f'./ai_action_record_{round(COMPLETION_PERCENTAGE*100)}'
 
 # Custom Gym environment for navigation task
 class NavEnv(gym.Env, Node):
@@ -50,7 +51,7 @@ class NavEnv(gym.Env, Node):
         self.map_reset_status = True
         self.pose_reset_status = True
         self.costmap_reset_status = True
-        self.max_pixels = self.determineDoneCondition("./maps/maze.pgm")
+        self.max_pixels = self.determineDoneCondition("./maps/maze-ttb-sim.pgm")
 
         # Set up publishers, subscribers and clients
         self.nav2_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
@@ -139,7 +140,7 @@ class NavEnv(gym.Env, Node):
             #print('Sending the pose')
             nav2_goal_msg = NavigateToPose.Goal()
             nav2_goal_msg.pose = goal_pose
-            nav2_future = self.nav2_client.send_goal_async(nav2_goal_msg, self.nav_callback)
+            nav2_future = self.nav2_client.send_goal_async(nav2_goal_msg)
 
             # Wait for the navigation to complete before taking the next step
             #print('Checking goal acceptance')
@@ -164,10 +165,13 @@ class NavEnv(gym.Env, Node):
         if invalid_goal:
             reward = -1
         else:
+            rclpy.spin_once(self) # catch up on callbacks
             # Determine how many new pixels were explored
+            map_2d_array = self.map_msg_to_obs_space(self.map, squeeze=True)
             old_pixels = self.visited_pixels.copy()
             self.visited_pixels = (map_2d_array >= 0).astype(int)
-            new_pixels = self.visited_pixels - old_pixels
+            new_pixels = np.sum(self.visited_pixels - old_pixels)
+            perc_pixels_visited = (np.sum(self.visited_pixels))*(MAP_MAX_POOLING*MAP_MAX_POOLING)/self.max_pixels
 
             # Compute the reward elements (number of new pixels mapped - penalty for travel distance)
             reward_pos = new_pixels/8000
@@ -180,9 +184,9 @@ class NavEnv(gym.Env, Node):
                 reward = max(min(1,reward_pos - reward_neg),0)
 
             # Check if the goal is reached
-            done = bool(np.sum(self.visited_pixels) > COMPLETION_PERCENTAGE*self.max_pixels)
+            done = bool(perc_pixels_visited >= COMPLETION_PERCENTAGE)
             #print(f"Reward Components - Reward: {reward_pos} Penalty: {reward_neg}")
-            print(f'Reward: {reward:.3f}  Done: {done} - visited {np.sum(new_pixels)} new pixels making a total of {np.sum(new_pixels)/self.max_free_pixels*100:.1f}% of mappable pixels')
+            print(f'Reward: {reward:.3f}  Done: {done} - visited {new_pixels} new pixels making a total of {perc_pixels_visited*100:.1f}% of mappable pixels')
             
         # Update the observation (occupancy grid map and robot pose)
         obs = self._get_obs()
@@ -243,7 +247,7 @@ class NavEnv(gym.Env, Node):
         self.map = map_msg
         self.map_reset_status = False
         if (self.visited_pixels is None):
-            self.visited_pixels = self.map_msg_to_obs_space(self.map, squeeze=True)
+            self.visited_pixels = (self.map_msg_to_obs_space(self.map, squeeze=True) >= 0).astype(int)
 
     def costmap_callback(self, costmap_msg):
         self.costmap = costmap_msg

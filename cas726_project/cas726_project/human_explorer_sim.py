@@ -1,3 +1,6 @@
+# Interface to convert clicked points on RViz into custom sim nav commands
+# ros2 run cas726_project human_explorer_sim
+
 import numpy as np
 import rclpy
 import sys
@@ -15,19 +18,11 @@ from robot_sim.action import NavigateToPose
 
 COMPLETION_PERCENTAGE = 0.999 # of known full map
 
-MAP_PATH = ['./maps/map-small-0.bmp',
-            './maps/map-small-1.bmp',
-            './maps/map-small-2.bmp',
-            './maps/map-small-3.bmp',
-            './maps/map-small-4.bmp',
-            './maps/map-small-5.bmp',
-            './maps/map-small-6.bmp',
-            './maps/map-small-7.bmp',
-            './maps/map-small-8.bmp',
-            './maps/map-small-9.bmp',
-            './maps/map-small-10.bmp',]
+MAP_PATH = ['./src/cas726_project/bitmap_maps/map-0.bmp',
+            './src/cas726_project/bitmap_maps/map-1.bmp',
+            './src/cas726_project/bitmap_maps/map-2.bmp']
 
-MAP_NUM = 5
+MAP_NUM = 1
 
 class Human_Explorer_Sim(Node):
     def __init__(self):
@@ -62,7 +57,7 @@ class Human_Explorer_Sim(Node):
  
     
     def load_map(self, map_num):
-        # Load the map into the simulator
+        # Load the map into the custom simulator
         req = LoadMap.Request()
         req.map_path = MAP_PATH[map_num]
         req.threshold = 200
@@ -127,6 +122,7 @@ def main(args=None):
         print('Waiting for reset')
         rclpy.spin_once(human_explorer)
 
+    # Tell the evaluator to start recording progress
     eval_status = Bool()
     eval_status.data = True
     human_explorer.evaluation_publisher.publish(eval_status)
@@ -138,16 +134,17 @@ def main(args=None):
 
     stop_time = human_explorer.get_clock().now().nanoseconds
 
-    sleep(3)
+    # Grace period for simulator / evaluator to catch up
+    sleep(5)
+
+    # Tell the evaluator to stop recording progress
     eval_status.data = False
     human_explorer.evaluation_publisher.publish(eval_status)
 
     duration = (stop_time - start_time)/1e9
-
     print(f'Exploration took {duration} seconds')
 
     human_explorer.destroy_node()
-
     rclpy.shutdown()
 
 

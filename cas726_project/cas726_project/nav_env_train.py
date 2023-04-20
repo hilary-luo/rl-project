@@ -1,4 +1,5 @@
 # Reinforcement learning environment for autonomous exploration for use with custom simulator
+# For use with ai_explorer node with USE_CUSTOM_SIM = True
 
 import rclpy
 import numpy as np
@@ -30,7 +31,7 @@ RANDOM_MAP = False
 MAP_NUM = 1
 
 COMPLETION_PERCENTAGE = 0.9 # of known full map
-LEARNING_RECORD_PATH = f'./action_record/ai_action_record_map{MAP_NUM}-{round(COMPLETION_PERCENTAGE*100)}'
+LEARNING_RECORD_PATH = f'./ai_action_record_map{MAP_NUM}-{round(COMPLETION_PERCENTAGE*100)}'
 
 # Custom Gym environment for navigation task
 class NavEnvTrain(gym.Env, Node):

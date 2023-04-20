@@ -1,4 +1,5 @@
 # Frontier based exploration for use with custom simulator
+# ros2 run cas726_project frontier_explorer_sim
 
 import numpy as np
 import rclpy

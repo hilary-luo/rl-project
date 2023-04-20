@@ -1,3 +1,6 @@
+# Monitor and record the progression of map exploration
+# ros2 run cas726_project evaluator <data_file_name>
+
 import numpy as np
 import rclpy
 

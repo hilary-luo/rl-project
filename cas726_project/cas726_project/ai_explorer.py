@@ -1,3 +1,6 @@
+# Reinforcement learning based autonomous exploration
+# ros2 run cas726_project ai_explorer
+
 import rclpy
 from cas726_project.nav_env import *
 from cas726_project.nav_env_train import *

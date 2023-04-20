@@ -1,9 +1,11 @@
 # Frontier based exploration for use with Turtlebot 4 simulator
+# ros2 run cas726_project frontier_explorer
 
 import numpy as np
 import rclpy
 from copy import copy
 from time import sleep
+from PIL import Image
 
 from rclpy.action import ActionClient
 from rclpy.node import Node
@@ -18,7 +20,6 @@ from skimage import measure
 MIN_REGION_AREA = 10
 FRONTIER_TRIGGER_DISTANCE = 0.3
 COMPLETION_PERCENTAGE = 0.95 # of known full map
-
 
 #Enums for Frontier List
 ENUM_PATH_DISTANCE = 0
@@ -48,6 +49,7 @@ class Frontier_Explorer(Node):
         self.map_msg = None
         self.pose_msg = None
         self.frontier_list = list()
+        self.max_pixels = self.determineDoneCondition("./maps/maze-ttb-sim.pgm")
 
         # Wait for navigation to fully activate
         print('Waiting for Nav2 server')
@@ -55,6 +57,12 @@ class Frontier_Explorer(Node):
 
         print('Frontier Explorer Node initialized')
 
+    def determineDoneCondition(self, path):
+        full_map = np.asarray(Image.open(path))
+        max_pixels = np.sum(np.logical_or(full_map < 180,full_map > 220))
+        print(f'Max number of pixels to map is {max_pixels} or {max_pixels*100/(full_map.shape[0]*full_map.shape[1]):.2f}% of total pixels')
+        return max_pixels
+    
     def find_frontiers(self):
         map = self.get_map()
 
@@ -193,7 +201,7 @@ class Frontier_Explorer(Node):
 
     def check_done(self):
         pixels_visited = np.sum((np.array(self.map_msg.data) >= 0).astype(int))
-        return bool(pixels_visited > COMPLETION_PERCENTAGE*len(self.map_msg.data))
+        return bool(pixels_visited > COMPLETION_PERCENTAGE*self.max_pixels)
 
 
     # Getters
